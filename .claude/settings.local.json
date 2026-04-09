@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p client/src/app client/src/components/layout client/src/components/ui client/src/components/auth client/src/components/games client/src/pages client/src/stores client/src/services client/src/hooks client/src/lib client/src/styles client/public)",
+      "Bash(mkdir -p server/src/routes server/src/middleware server/src/socket server/src/lib server/prisma)",
+      "Bash(cp App.tsx client/src/app/App.tsx)",
+      "Bash(cp index.tsx client/src/app/main.tsx)",
+      "Bash(cp types.ts client/src/lib/types.ts)",
+      "Bash(cp constants.tsx client/src/lib/constants.ts)",
+      "Bash(cp vite-env.d.ts client/src/vite-env.d.ts)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vite:*)",
+      "Bash(npm install:*)",
+      "Bash(npx prisma:*)",
+      "Bash(node:*)",
+      "Bash(npx tsx:*)",
+      "Bash(timeout 10 npm run dev)"
+    ]
+  }
+}

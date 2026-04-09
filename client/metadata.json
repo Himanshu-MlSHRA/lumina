@@ -1,0 +1,9 @@
+
+{
+  "name": "Lumina: Your Path to Light",
+  "description": "A mental health platform featuring mindful games, AI-powered mood tracking, community support, and daily anti-doomscrolling tasks.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

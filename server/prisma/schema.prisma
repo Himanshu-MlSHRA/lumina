@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id          String    @id @default(uuid())
+  email       String    @unique
+  password    String
+  displayName String
+  avatarUrl   String?
+  isAnonymous Boolean   @default(false)
+  streak      Int       @default(0)
+  lastActive  DateTime?
+  createdAt   DateTime  @default(now())
+
+  moodEntries      MoodEntry[]
+  tasks            DailyTask[]
+  activityLogs     ActivityLog[]
+  aiConversations  AIConversation[]
+  posts            CommunityPost[]
+  sentMessages     Message[]       @relation("sender")
+  receivedMessages Message[]       @relation("recipient")
+  groups           GroupMember[]
+  likes            PostLike[]
+  createdGroups    Group[]         @relation("creator")
+}
+
+model MoodEntry {
+  id        String   @id @default(uuid())
+  userId    String
+  score     Int
+  label     String
+  note      String?
+  source    String   @default("manual")
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+model DailyTask {
+  id          String   @id @default(uuid())
+  userId      String
+  title       String
+  description String
+  type        String
+  completed   Boolean  @default(false)
+  date        DateTime @default(now())
+  aiGenerated Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, date])
+}
+
+model ActivityLog {
+  id           String   @id @default(uuid())
+  userId       String
+  activityType String
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+model Group {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  icon        String?
+  color       String?
+  createdById String
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  createdBy User          @relation("creator", fields: [createdById], references: [id])
+  members   GroupMember[]
+  messages  Message[]
+  posts     CommunityPost[]
+}
+
+model GroupMember {
+  groupId  String
+  userId   String
+  role     String   @default("member")
+  joinedAt DateTime @default(now())
+
+  group Group @relation(fields: [groupId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@id([groupId, userId])
+}
+
+model Message {
+  id          String   @id @default(uuid())
+  senderId    String
+  groupId     String?
+  recipientId String?
+  content     String
+  isAnonymous Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  sender    User   @relation("sender", fields: [senderId], references: [id])
+  recipient User?  @relation("recipient", fields: [recipientId], references: [id])
+  group     Group? @relation(fields: [groupId], references: [id])
+
+  @@index([groupId, createdAt])
+  @@index([senderId, recipientId, createdAt])
+}
+
+model CommunityPost {
+  id          String   @id @default(uuid())
+  authorId    String
+  groupId     String
+  content     String
+  imageUrl    String?
+  isAnonymous Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  author User  @relation(fields: [authorId], references: [id])
+  group  Group @relation(fields: [groupId], references: [id])
+  likes  PostLike[]
+
+  @@index([groupId, createdAt])
+}
+
+model PostLike {
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post CommunityPost @relation(fields: [postId], references: [id])
+  user User          @relation(fields: [userId], references: [id])
+
+  @@id([postId, userId])
+}
+
+model AIConversation {
+  id          String   @id @default(uuid())
+  userId      String
+  sessionType String
+  summary     String?
+  moodBefore  Int?
+  moodAfter   Int?
+  durationSec Int?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+}
