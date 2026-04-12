@@ -31,14 +31,6 @@ router.post('/signup', async (req: AuthRequest, res: Response) => {
       },
     });
 
-    // Auto-join default groups
-    const defaultGroups = await prisma.group.findMany({ where: { isDefault: true } });
-    if (defaultGroups.length > 0) {
-      await prisma.groupMember.createMany({
-        data: defaultGroups.map(g => ({ groupId: g.id, userId: user.id })),
-      });
-    }
-
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET!, { expiresIn: '7d' });
 
     res.status(201).json({

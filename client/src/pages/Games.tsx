@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useState, useEffect, useRef } from "react"
+import { motion } from 'framer-motion'
 import { api } from '../services/api'
 
 const logActivity = (game: string, metadata?: any) => {
@@ -222,15 +223,30 @@ export default function MindfulFlow() {
   // ================= MAIN CARD VIEW =================
   if (activeTask === "none") {
     return (
-      <div className="min-h-screen bg-transparent p-4 md:p-10 animate-in fade-in duration-700">
-        <header className="mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold text-slate-900 tracking-tight">Mindful Flow</h1>
-          <p className="text-lg text-slate-500 mt-2 font-medium italic">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="min-h-screen bg-transparent"
+      >
+        <header className="mb-8">
+          <motion.h1
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-3xl md:text-4xl font-extrabold text-slate-900 tracking-tight"
+          >
+            Mindful Flow
+          </motion.h1>
+          <motion.p
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="text-slate-500 mt-1 font-medium italic text-sm"
+          >
             {greeting}
-          </p>
+          </motion.p>
         </header>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           
           {/* Soundscape Mixer */}
           <div className="bg-white rounded-[2rem] shadow-lg hover:shadow-2xl hover:shadow-cyan-100 hover:-translate-y-2 p-6 space-y-6 transition-all duration-500 border border-slate-100 group lg:col-span-2">
@@ -349,7 +365,7 @@ export default function MindfulFlow() {
           </div>
 
         </div>
-      </div>
+      </motion.div>
     )
   }
 

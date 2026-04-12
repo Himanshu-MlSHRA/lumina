@@ -77,4 +77,71 @@ router.get('/dm/:userId', authenticate, async (req: AuthRequest, res: Response) 
   }
 });
 
+// Get all DM conversations for the current user
+router.get('/conversations', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    // Find all unique users this user has DM'd with
+    const sentMessages = await prisma.message.findMany({
+      where: { senderId: req.userId!, groupId: null, recipientId: { not: null } },
+      select: { recipientId: true },
+      distinct: ['recipientId'],
+    });
+
+    const receivedMessages = await prisma.message.findMany({
+      where: { recipientId: req.userId!, groupId: null },
+      select: { senderId: true },
+      distinct: ['senderId'],
+    });
+
+    const userIds = new Set<string>();
+    sentMessages.forEach(m => { if (m.recipientId) userIds.add(m.recipientId); });
+    receivedMessages.forEach(m => userIds.add(m.senderId));
+
+    // Get the latest message for each conversation
+    const conversations = await Promise.all(
+      Array.from(userIds).map(async (otherUserId) => {
+        const lastMessage = await prisma.message.findFirst({
+          where: {
+            groupId: null,
+            OR: [
+              { senderId: req.userId!, recipientId: otherUserId },
+              { senderId: otherUserId, recipientId: req.userId! },
+            ],
+          },
+          orderBy: { createdAt: 'desc' },
+          include: {
+            sender: { select: { id: true, displayName: true, avatarUrl: true } },
+          },
+        });
+
+        const otherUser = await prisma.user.findUnique({
+          where: { id: otherUserId },
+          select: { id: true, displayName: true, avatarUrl: true },
+        });
+
+        return {
+          user: otherUser,
+          lastMessage: lastMessage ? {
+            content: lastMessage.content,
+            createdAt: lastMessage.createdAt,
+            isFromMe: lastMessage.senderId === req.userId,
+          } : null,
+        };
+      })
+    );
+
+    // Sort by most recent message
+    conversations.sort((a, b) => {
+      const aTime = a.lastMessage?.createdAt?.getTime() || 0;
+      const bTime = b.lastMessage?.createdAt?.getTime() || 0;
+      return bTime - aTime;
+    });
+
+    res.json({ conversations });
+  } catch (error) {
+    console.error('Get conversations error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 export default router;

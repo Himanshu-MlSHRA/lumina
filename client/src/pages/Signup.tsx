@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { useAuthStore } from '../stores/authStore';
 
 const Signup: React.FC = () => {
@@ -30,21 +31,44 @@ const Signup: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-purple-50 px-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-10">
-          <div className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-xl shadow-indigo-200">
+    <div className="min-h-screen flex items-center justify-center bg-[#fafbfe] px-4 relative overflow-hidden">
+      <div className="absolute top-10 -right-20 w-72 h-72 bg-purple-200/40 rounded-full blur-3xl" />
+      <div className="absolute bottom-10 -left-20 w-80 h-80 bg-indigo-200/30 rounded-full blur-3xl" />
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="w-full max-w-md relative z-10"
+      >
+        <div className="text-center mb-8">
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 300, delay: 0.1 }}
+            className="w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-xl shadow-indigo-200/50"
+          >
             <i className="fas fa-sparkles text-white text-2xl"></i>
-          </div>
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Begin your journey</h1>
-          <p className="text-slate-500 mt-2">Create your Lumina account</p>
+          </motion.div>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Begin your journey</h1>
+          <p className="text-slate-500 mt-2 text-sm">Create your Lumina account</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white/80 backdrop-blur-xl rounded-3xl p-8 shadow-xl shadow-slate-200/50 border border-white/50 space-y-5">
+        <motion.form
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          onSubmit={handleSubmit}
+          className="bg-white/80 backdrop-blur-2xl rounded-3xl p-8 shadow-xl shadow-slate-200/30 border border-white/60 space-y-5"
+        >
           {error && (
-            <div className="bg-red-50 text-red-600 px-4 py-3 rounded-xl text-sm font-medium border border-red-100">
+            <motion.div
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="bg-red-50 text-red-600 px-4 py-3 rounded-xl text-sm font-medium border border-red-100"
+            >
               <i className="fas fa-exclamation-circle mr-2"></i>{error}
-            </div>
+            </motion.div>
           )}
 
           <div>
@@ -54,8 +78,8 @@ const Signup: React.FC = () => {
               value={displayName}
               onChange={e => setDisplayName(e.target.value)}
               required
-              className="w-full px-4 py-3.5 rounded-xl border border-slate-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 outline-none transition-all text-slate-800 bg-white"
-              placeholder="Your name"
+              className="w-full px-4 py-3.5 rounded-xl border border-slate-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none transition-all text-slate-800 bg-white/80 text-sm"
+              placeholder="How should we call you?"
             />
           </div>
 
@@ -66,7 +90,7 @@ const Signup: React.FC = () => {
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-3.5 rounded-xl border border-slate-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 outline-none transition-all text-slate-800 bg-white"
+              className="w-full px-4 py-3.5 rounded-xl border border-slate-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none transition-all text-slate-800 bg-white/80 text-sm"
               placeholder="you@example.com"
             />
           </div>
@@ -78,25 +102,27 @@ const Signup: React.FC = () => {
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
-              className="w-full px-4 py-3.5 rounded-xl border border-slate-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 outline-none transition-all text-slate-800 bg-white"
+              className="w-full px-4 py-3.5 rounded-xl border border-slate-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 outline-none transition-all text-slate-800 bg-white/80 text-sm"
               placeholder="At least 6 characters"
             />
           </div>
 
-          <button
+          <motion.button
+            whileHover={{ scale: 1.01, y: -1 }}
+            whileTap={{ scale: 0.98 }}
             type="submit"
             disabled={loading}
-            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 rounded-xl font-bold shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-300 hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white py-3.5 rounded-xl font-bold shadow-lg shadow-indigo-200/50 hover:shadow-xl transition-all disabled:opacity-50 text-sm"
           >
             {loading ? <><i className="fas fa-circle-notch animate-spin mr-2"></i>Creating account...</> : 'Create Account'}
-          </button>
+          </motion.button>
 
           <p className="text-center text-sm text-slate-500">
             Already have an account?{' '}
             <Link to="/login" className="text-indigo-600 font-semibold hover:text-indigo-700">Sign in</Link>
           </p>
-        </form>
-      </div>
+        </motion.form>
+      </motion.div>
     </div>
   );
 };

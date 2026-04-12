@@ -33,12 +33,24 @@ router.post('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { title, description, type, aiGenerated } = req.body;
 
+    if (!title || !description) {
+      res.status(400).json({ error: 'Title and description are required' });
+      return;
+    }
+
+    const validTypes = ['movement', 'mindfulness', 'social', 'creative'];
+    const taskType = validTypes.includes(type) ? type : 'mindfulness';
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
     const task = await prisma.dailyTask.create({
       data: {
         userId: req.userId!,
         title,
         description,
-        type,
+        type: taskType,
+        date: today,
         aiGenerated: aiGenerated || false,
       },
     });
@@ -55,15 +67,30 @@ router.post('/batch', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const { tasks } = req.body;
 
-    const created = await prisma.dailyTask.createManyAndReturn({
-      data: tasks.map((t: any) => ({
-        userId: req.userId!,
-        title: t.title,
-        description: t.description,
-        type: t.type,
-        aiGenerated: true,
-      })),
-    });
+    if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
+      res.status(400).json({ error: 'tasks array is required' });
+      return;
+    }
+
+    const validTypes = ['movement', 'mindfulness', 'social', 'creative'];
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    // Create tasks one by one to get IDs back (SQLite doesn't support createManyAndReturn well)
+    const created = await Promise.all(
+      tasks.map((t: any) =>
+        prisma.dailyTask.create({
+          data: {
+            userId: req.userId!,
+            title: t.title || 'Untitled Task',
+            description: t.description || '',
+            type: validTypes.includes(t.type) ? t.type : 'mindfulness',
+            date: today,
+            aiGenerated: true,
+          },
+        })
+      )
+    );
 
     res.status(201).json({ tasks: created });
   } catch (error) {

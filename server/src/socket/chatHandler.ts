@@ -162,11 +162,26 @@ export function setupSocketHandlers(io: Server) {
         // Emit to the DM room (both users if they have the DM page open)
         io.to(`dm:${roomKey}`).emit('new-dm', { message });
 
-        // ALSO emit directly to sender's personal room (in case they're not in dm room yet)
-        io.to(`user:${userId}`).emit('new-dm', { message });
+        // Also emit to personal rooms for users NOT in the DM room
+        // This ensures the message is received even if they don't have the DM page open
+        const dmRoomSockets = await io.in(`dm:${roomKey}`).fetchSockets();
+        const dmRoomSocketIds = new Set(dmRoomSockets.map(s => s.id));
 
-        // Emit to recipient's personal room (always — they might not have DM page open)
-        io.to(`user:${recipientId}`).emit('new-dm', { message });
+        // Send to sender's personal room sockets that aren't in the DM room
+        const senderSockets = await io.in(`user:${userId}`).fetchSockets();
+        for (const s of senderSockets) {
+          if (!dmRoomSocketIds.has(s.id)) {
+            s.emit('new-dm', { message });
+          }
+        }
+
+        // Send to recipient's personal room sockets that aren't in the DM room
+        const recipientSockets = await io.in(`user:${recipientId}`).fetchSockets();
+        for (const s of recipientSockets) {
+          if (!dmRoomSocketIds.has(s.id)) {
+            s.emit('new-dm', { message });
+          }
+        }
 
         // Send notification to recipient
         io.to(`user:${recipientId}`).emit('notification', {
@@ -215,7 +230,7 @@ export function setupSocketHandlers(io: Server) {
     socket.on('call-initiate', ({ recipientId, callType, offer }: {
       recipientId: string;
       callType: 'audio' | 'video';
-      offer: RTCSessionDescriptionInit;
+      offer: any;
     }) => {
       io.to(`user:${recipientId}`).emit('call-incoming', {
         callerId: userId,
@@ -227,7 +242,7 @@ export function setupSocketHandlers(io: Server) {
 
     socket.on('call-accept', ({ callerId, answer }: {
       callerId: string;
-      answer: RTCSessionDescriptionInit;
+      answer: any;
     }) => {
       io.to(`user:${callerId}`).emit('call-accepted', {
         recipientId: userId,
@@ -249,7 +264,7 @@ export function setupSocketHandlers(io: Server) {
 
     socket.on('ice-candidate', ({ targetUserId, candidate }: {
       targetUserId: string;
-      candidate: RTCIceCandidateInit;
+      candidate: any;
     }) => {
       io.to(`user:${targetUserId}`).emit('ice-candidate', {
         userId,

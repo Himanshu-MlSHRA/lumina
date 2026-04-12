@@ -23,9 +23,31 @@ async function request(path: string, options: RequestInit = {}): Promise<any> {
   return res.json();
 }
 
+async function uploadFile(path: string, file: File): Promise<any> {
+  const token = getToken();
+  const formData = new FormData();
+  formData.append('image', file);
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Upload failed' }));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+
+  return res.json();
+}
+
 export const api = {
   get: (path: string) => request(path),
   post: (path: string, body: any) => request(path, { method: 'POST', body: JSON.stringify(body) }),
   put: (path: string, body: any) => request(path, { method: 'PUT', body: JSON.stringify(body) }),
   delete: (path: string) => request(path, { method: 'DELETE' }),
+  upload: (path: string, file: File) => uploadFile(path, file),
 };

@@ -14,7 +14,8 @@
       "Bash(npx prisma:*)",
       "Bash(node:*)",
       "Bash(npx tsx:*)",
-      "Bash(timeout 10 npm run dev)"
+      "Bash(timeout 10 npm run dev)",
+      "Bash(npm run:*)"
     ]
   }
 }

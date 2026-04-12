@@ -6,6 +6,8 @@ import AuthGuard from "../components/auth/AuthGuard";
 import Dashboard from "../pages/Dashboard";
 import Chat from "../pages/Chat";
 import Games from "../pages/Games";
+import KnowYourself from "../pages/KnowYourself";
+import Report from "../pages/Report";
 import Community from "../pages/Community";
 import GroupChat from "../pages/GroupChat";
 import DirectMessage from "../pages/DirectMessage";
@@ -27,6 +29,8 @@ const App: React.FC = () => {
           <Route path="/" element={<Dashboard />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/games" element={<Games />} />
+          <Route path="/know-yourself" element={<KnowYourself />} />
+          <Route path="/report" element={<Report />} />
           <Route path="/community" element={<Community />} />
           <Route path="/community/group/:groupId" element={<GroupChat />} />
           <Route path="/community/dm/:userId" element={<DirectMessage />} />

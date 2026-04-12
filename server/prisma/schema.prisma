@@ -18,16 +18,51 @@ model User {
   lastActive  DateTime?
   createdAt   DateTime  @default(now())
 
-  moodEntries      MoodEntry[]
-  tasks            DailyTask[]
-  activityLogs     ActivityLog[]
-  aiConversations  AIConversation[]
-  posts            CommunityPost[]
-  sentMessages     Message[]       @relation("sender")
-  receivedMessages Message[]       @relation("recipient")
-  groups           GroupMember[]
-  likes            PostLike[]
-  createdGroups    Group[]         @relation("creator")
+  moodEntries         MoodEntry[]
+  tasks               DailyTask[]
+  activityLogs        ActivityLog[]
+  aiConversations     AIConversation[]
+  posts               CommunityPost[]
+  sentMessages        Message[]       @relation("sender")
+  receivedMessages    Message[]       @relation("recipient")
+  groups              GroupMember[]
+  likes               PostLike[]
+  createdGroups       Group[]         @relation("creator")
+  personalityAnswers  PersonalityAnswer[]
+  personalitySessions PersonalitySession[]
+}
+
+model PersonalityAnswer {
+  id         String   @id @default(uuid())
+  userId     String
+  questionId String
+  axis       String
+  direction  String
+  score      Int
+  weight     Float
+  sessionId  String?
+  createdAt  DateTime @default(now())
+
+  user    User                 @relation(fields: [userId], references: [id])
+  session PersonalitySession?  @relation(fields: [sessionId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([userId, questionId])
+}
+
+model PersonalitySession {
+  id            String   @id @default(uuid())
+  userId        String
+  questionCount Int      @default(0)
+  completed     Boolean  @default(false)
+  typeSnapshot  String?
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+
+  user    User                @relation(fields: [userId], references: [id])
+  answers PersonalityAnswer[]
+
+  @@index([userId, startedAt])
 }
 
 model MoodEntry {
