@@ -1,4 +1,4 @@
-const API_BASE = '/api';
+const API_BASE = `${import.meta.env.VITE_SERVER_URL}/api`;
 
 function getToken(): string | null {
   return localStorage.getItem('lumina_token');
