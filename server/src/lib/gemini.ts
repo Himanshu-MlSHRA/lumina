@@ -44,12 +44,87 @@ export const getChatResponse = async (history: Message[], userInput: string): Pr
   }
 };
 
-export const generateDailyTasks = async (mood: string): Promise<DailyTask[]> => {
+export interface BehaviourProfile {
+  mood: string;
+  recentMoodAvg?: number | null;
+  recentMoodLabels?: string[];
+  completedTaskTypes?: { type: string; count: number }[];
+  skippedTaskTypes?: { type: string; count: number }[];
+  topActivities?: { activity: string; count: number }[];
+  hobbies?: string[];
+  concerns?: string[];
+  goals?: string[];
+  preferences?: string[];
+}
+
+export const generateDailyTasks = async (
+  moodOrBehaviour: string | BehaviourProfile
+): Promise<DailyTask[]> => {
   try {
+    const b: BehaviourProfile = typeof moodOrBehaviour === 'string'
+      ? { mood: moodOrBehaviour }
+      : moodOrBehaviour;
+
+    const lines: string[] = [];
+    lines.push(`Current mood: ${b.mood || 'unknown'}.`);
+    if (typeof b.recentMoodAvg === 'number') {
+      lines.push(`Average mood over the last week: ${b.recentMoodAvg.toFixed(1)} / 10.`);
+    }
+    if (b.recentMoodLabels && b.recentMoodLabels.length) {
+      lines.push(`Recent mood labels: ${b.recentMoodLabels.slice(0, 5).join(', ')}.`);
+    }
+    if (b.completedTaskTypes && b.completedTaskTypes.length) {
+      lines.push(
+        `Task types they actually finish (most → least): ${b.completedTaskTypes
+          .map((t) => `${t.type} ×${t.count}`)
+          .join(', ')}.`
+      );
+    }
+    if (b.skippedTaskTypes && b.skippedTaskTypes.length) {
+      lines.push(
+        `Task types they tend to skip: ${b.skippedTaskTypes
+          .map((t) => `${t.type} ×${t.count}`)
+          .join(', ')}.`
+      );
+    }
+    if (b.topActivities && b.topActivities.length) {
+      lines.push(
+        `Most-frequent in-app actions: ${b.topActivities
+          .map((a) => `${a.activity} ×${a.count}`)
+          .join(', ')}.`
+      );
+    }
+    if (b.hobbies && b.hobbies.length) {
+      lines.push(`Hobbies the user has shared: ${b.hobbies.slice(0, 4).join('; ')}.`);
+    }
+    if (b.concerns && b.concerns.length) {
+      lines.push(`Recent concerns the user mentioned: ${b.concerns.slice(0, 3).join('; ')}.`);
+    }
+    if (b.goals && b.goals.length) {
+      lines.push(`Goals the user mentioned: ${b.goals.slice(0, 3).join('; ')}.`);
+    }
+    if (b.preferences && b.preferences.length) {
+      lines.push(`Stated preferences: ${b.preferences.slice(0, 3).join('; ')}.`);
+    }
+
+    const behaviourBlock = lines.join('\n');
+
+    const prompt = `You are designing today's three small wellness tasks for one specific person.
+Use the behaviour profile below to make the tasks feel personal — lean into the task TYPES they actually
+complete, weave in their hobbies and stated likes when natural, and gently introduce variety if they only
+ever do one type. Tasks must be tiny, actionable in under 20 minutes, and low-friction. Each "type" must
+be exactly one of: movement, mindfulness, social, creative.
+
+Return EXACTLY 3 tasks. Avoid repeating yesterday's vibe — pick a healthy mix unless the data clearly
+points to one strength worth reinforcing today. If the user is low / struggling, prefer gentle mindfulness
+and tiny movement; if energetic / good, push slightly into social or creative.
+
+BEHAVIOUR PROFILE:
+${behaviourBlock}`;
+
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Generate 3 small daily tasks for a user who is feeling "${mood}".
-      Tasks should be simple, actionable, and aimed at reducing screen time.`,
+      contents: prompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: {

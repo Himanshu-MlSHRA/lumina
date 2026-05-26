@@ -5,7 +5,10 @@ import { motion } from 'framer-motion'
 import { api } from '../services/api'
 
 const logActivity = (game: string, metadata?: any) => {
-  api.post('/activity', { activityType: 'game', metadata: { game, ...metadata } }).catch(() => {});
+  // Tag activity with the specific game so the report's "What you like to do"
+  // can rank which mindful activity the user actually returns to.
+  const safe = (game || 'unknown').toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  api.post('/activity', { activityType: `game_${safe}`, metadata: { game, ...metadata } }).catch(() => {});
 };
 
 type TaskType = "none" | "breathing" | "walk" | "detox" | "grounding" | "mixer"

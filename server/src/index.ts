@@ -27,13 +27,13 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: 'http://localhost:3000',
+    origin: 'https://luminamentalwellnessplatform.vercel.app/',
     methods: ['GET', 'POST'],
   },
 });
 
 // Middleware
-app.use(cors({ origin: 'http://localhost:3000' }));
+app.use(cors({ origin: 'https://luminamentalwellnessplatform.vercel.app/' }));
 app.use(express.json());
 
 // Serve uploaded files

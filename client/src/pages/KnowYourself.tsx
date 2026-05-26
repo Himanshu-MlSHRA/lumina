@@ -894,7 +894,7 @@ const LetterGuideModal: React.FC<{
   );
 };
 
-// ---------- Ask Lumina (Gemini Live Audio + Screen) ----------
+// ---------- Ask Lumina (small floating popup, voice-only) ----------
 const AskLuminaOverlay: React.FC<{
   question: Question | undefined;
   currentType: string | null;
@@ -904,8 +904,8 @@ const AskLuminaOverlay: React.FC<{
   const [active, setActive] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [talking, setTalking] = useState(false);
+  const [muted, setMuted] = useState(false);
   const [transcription, setTranscription] = useState('');
-  const [screenShared, setScreenShared] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const inputCtxRef = useRef<AudioContext | null>(null);
@@ -913,13 +913,16 @@ const AskLuminaOverlay: React.FC<{
   const outputNodeRef = useRef<GainNode | null>(null);
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
-  const screenStreamRef = useRef<MediaStream | null>(null);
   const sessionRef = useRef<any>(null);
   const nextStartTimeRef = useRef(0);
   const sourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
-  const screenIntervalRef = useRef<number | null>(null);
-  const videoElRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const mutedRef = useRef(false);
+  const sessionStartRef = useRef<number | null>(null);
+  const userBufRef = useRef('');
+  const luminaBufRef = useRef('');
+  const turnsRef = useRef<{ role: 'user' | 'lumina'; text: string }[]>([]);
+
+  useEffect(() => { mutedRef.current = muted; }, [muted]);
 
   useEffect(() => {
     return () => stopSession();
@@ -951,42 +954,23 @@ const AskLuminaOverlay: React.FC<{
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
 
-      // Attempt screen capture (optional - user can decline)
-      let screenStream: MediaStream | null = null;
-      try {
-        screenStream = await navigator.mediaDevices.getDisplayMedia({
-          video: { frameRate: 1 },
-          audio: false,
-        });
-        screenStreamRef.current = screenStream;
-        setScreenShared(true);
-      } catch {
-        // User declined screen share — session still works without it
-      }
+      const focusBlock = context
+        ? `The user specifically clicked help on: "${context.topic}". Their request: "${context.text}"`
+        : question
+        ? `The user is currently looking at this Likert statement (0=strongly disagree, 5=strongly agree): "${question.text}" — measures the ${question.axis} axis.`
+        : `The user has not picked a specific question yet.`;
 
-      const contextBlock = context
-        ? `The user specifically wants help with: ${context.topic}
-Their request: "${context.text}"
-Answer their request directly in 1-3 short sentences.`
-        : `The user is currently on this Likert-scale statement (0 = strongly disagree, 5 = strongly agree):
-"${question?.text ?? ''}"
-This question measures the ${question?.axis ?? '?'} axis (direction: ${question?.direction ?? '?'}).`;
+      const systemInstruction = `You are Lumina, here only to clear up confusion in a personality self-assessment. Keep this scope tight.
 
-      const systemInstruction = `You are Lumina, a warm, gentle companion helping the user with a personality self-assessment.
+${focusBlock}
+Their running type: ${currentType || 'not yet determined'}.
 
-${contextBlock}
+OPENING (CRITICAL): Greet them warmly in 1 short sentence and ask "what didn't you understand? I'm here to help." Then wait.
 
-Their running personality type is currently: ${currentType || 'not yet determined'}.
+DURING: Answer ONLY what they ask. Allowed: rephrase a question, give an everyday example, explain what a letter (E/I/S/N/T/F/J/P) means.
+NOT allowed: tell them how to answer, lecture about the test, drift into general therapy.
 
-Your job is to help them understand — never to influence their answer. You can:
-- Read the question aloud in a warm voice.
-- Rephrase it in simpler, everyday language.
-- Give a concrete example of what it would look like.
-- Explain what a letter like E, I, N, or T means.
-- Reassure them that there's no right answer.
-
-Keep replies short, 1-3 sentences. Don't push them toward any answer. If they ask you to pick one, decline gently and remind them only they know.
-If the user shares their screen you may briefly comment on what's visible, but stay focused on helping.`;
+PACE: 1-2 sentences max per reply. If they say "ok thanks" or "got it", just say a warm one-liner and stop.`;
 
       const sessionPromise = ai.live.connect({
         model: 'gemini-2.5-flash-native-audio-preview-12-2025',
@@ -994,12 +978,13 @@ If the user shares their screen you may briefly comment on what's visible, but s
           onopen: () => {
             setActive(true);
             setConnecting(false);
+            sessionStartRef.current = Date.now();
             const source = inputCtx.createMediaStreamSource(stream);
             const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
             scriptProcessorRef.current = scriptProcessor;
 
             scriptProcessor.onaudioprocess = (e) => {
-              if (!sessionRef.current) return;
+              if (!sessionRef.current || mutedRef.current) return;
               const inputData = e.inputBuffer.getChannelData(0);
               const int16 = new Int16Array(inputData.length);
               for (let i = 0; i < inputData.length; i++) int16[i] = inputData[i] * 32768;
@@ -1009,55 +994,33 @@ If the user shares their screen you may briefly comment on what's visible, but s
               const base64 = btoa(binary);
               sessionPromise.then((session) =>
                 session.sendRealtimeInput({ media: { data: base64, mimeType: 'audio/pcm;rate=16000' } })
-              );
+              ).catch(() => {});
             };
             source.connect(scriptProcessor);
             scriptProcessor.connect(inputCtx.destination);
-
-            // Screen frame sampling
-            if (screenStream) {
-              const video = document.createElement('video');
-              video.srcObject = screenStream;
-              video.muted = true;
-              video.play().catch(() => {});
-              videoElRef.current = video;
-              const canvas = document.createElement('canvas');
-              canvasRef.current = canvas;
-
-              screenIntervalRef.current = window.setInterval(() => {
-                if (!video.videoWidth || !sessionRef.current) return;
-                const w = Math.min(video.videoWidth, 960);
-                const scale = w / video.videoWidth;
-                canvas.width = w;
-                canvas.height = video.videoHeight * scale;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) return;
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                canvas.toBlob(
-                  async (blob) => {
-                    if (!blob) return;
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                      const dataUrl = reader.result as string;
-                      const base64 = dataUrl.split(',')[1];
-                      if (base64 && sessionRef.current) {
-                        sessionPromise.then((session) =>
-                          session.sendRealtimeInput({ media: { data: base64, mimeType: 'image/jpeg' } })
-                        );
-                      }
-                    };
-                    reader.readAsDataURL(blob);
-                  },
-                  'image/jpeg',
-                  0.7
-                );
-              }, 1500);
-            }
           },
           onmessage: async (message: LiveServerMessage) => {
-            if (message.serverContent?.outputTranscription) {
-              setTranscription(message.serverContent.outputTranscription.text || '');
+            const inputText = (message.serverContent as any)?.inputTranscription?.text;
+            if (inputText) userBufRef.current += inputText;
+
+            const outputText = (message.serverContent as any)?.outputTranscription?.text;
+            if (outputText) {
+              luminaBufRef.current += outputText;
+              setTranscription(luminaBufRef.current);
             }
+
+            if ((message.serverContent as any)?.turnComplete) {
+              if (userBufRef.current.trim()) {
+                turnsRef.current.push({ role: 'user', text: userBufRef.current.trim() });
+                userBufRef.current = '';
+              }
+              if (luminaBufRef.current.trim()) {
+                turnsRef.current.push({ role: 'lumina', text: luminaBufRef.current.trim() });
+                luminaBufRef.current = '';
+                setTranscription('');
+              }
+            }
+
             const audioData = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
             if (audioData) {
               setTalking(true);
@@ -1099,7 +1062,8 @@ If the user shares their screen you may briefly comment on what's visible, but s
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
           systemInstruction,
           outputAudioTranscription: {},
-        },
+          inputAudioTranscription: {},
+        } as any,
       });
       sessionRef.current = sessionPromise;
     } catch (err: any) {
@@ -1110,11 +1074,26 @@ If the user shares their screen you may briefly comment on what's visible, but s
     }
   };
 
+  const finalizeAndLog = () => {
+    const captured = [...turnsRef.current];
+    if (userBufRef.current.trim()) captured.push({ role: 'user', text: userBufRef.current.trim() });
+    if (luminaBufRef.current.trim()) captured.push({ role: 'lumina', text: luminaBufRef.current.trim() });
+    if (captured.length < 2) return;
+    const transcript = captured.map((t) => `${t.role === 'user' ? 'User' : 'Lumina'}: ${t.text}`).join('\n');
+    const durationSec = sessionStartRef.current ? Math.round((Date.now() - sessionStartRef.current) / 1000) : undefined;
+    api.post('/ai/extract-facts', {
+      transcript,
+      sessionType: 'question-help',
+      durationSec,
+    }).catch((err) => console.warn('Ask Lumina log failed:', err));
+    turnsRef.current = [];
+    userBufRef.current = '';
+    luminaBufRef.current = '';
+    sessionStartRef.current = null;
+  };
+
   const stopSession = () => {
-    if (screenIntervalRef.current) {
-      clearInterval(screenIntervalRef.current);
-      screenIntervalRef.current = null;
-    }
+    finalizeAndLog();
     if (scriptProcessorRef.current) {
       try { scriptProcessorRef.current.disconnect(); } catch {}
       scriptProcessorRef.current = null;
@@ -1127,10 +1106,6 @@ If the user shares their screen you may briefly comment on what's visible, but s
       micStreamRef.current.getTracks().forEach((t) => t.stop());
       micStreamRef.current = null;
     }
-    if (screenStreamRef.current) {
-      screenStreamRef.current.getTracks().forEach((t) => t.stop());
-      screenStreamRef.current = null;
-    }
     if (sessionRef.current) {
       sessionRef.current.then((s: any) => { try { s.close(); } catch {} });
       sessionRef.current = null;
@@ -1139,7 +1114,7 @@ If the user shares their screen you may briefly comment on what's visible, but s
     sourcesRef.current.clear();
     setActive(false);
     setTalking(false);
-    setScreenShared(false);
+    setMuted(false);
     setTranscription('');
   };
 
@@ -1150,100 +1125,98 @@ If the user shares their screen you may briefly comment on what's visible, but s
 
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xl"
+      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 20, scale: 0.95 }}
+      transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+      className="fixed bottom-4 right-4 md:bottom-6 md:right-6 z-50 w-[calc(100vw-2rem)] max-w-[360px] bg-white rounded-3xl shadow-2xl shadow-indigo-300/40 border border-indigo-100 overflow-hidden pointer-events-auto"
     >
-      <motion.div
-        initial={{ scale: 0.9, y: 30 }}
-        animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.9, y: 30 }}
-        transition={{ type: 'spring', stiffness: 220, damping: 24 }}
-        className="relative w-full max-w-lg bg-white rounded-[2rem] p-8 md:p-10 shadow-2xl overflow-hidden"
-      >
-        {/* Aurora inside overlay */}
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute -top-20 -left-20 w-80 h-80 rounded-full bg-indigo-200/50 blur-[80px]" />
-          <div className="absolute -bottom-20 -right-20 w-80 h-80 rounded-full bg-purple-200/50 blur-[80px]" />
+      <div className="relative">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-indigo-50 to-purple-50 border-b border-indigo-100">
+          <div className="relative w-9 h-9 flex-shrink-0">
+            <div className={`absolute inset-0 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 ${active ? 'aura-breathing' : ''}`} />
+            <div className={`absolute inset-0.5 rounded-full bg-white flex items-center justify-center ${talking ? 'scale-95' : ''} transition-transform`}>
+              <i className="fas fa-sun text-indigo-600 text-sm"></i>
+            </div>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[9px] font-bold text-indigo-500 uppercase tracking-[0.2em]">Ask Lumina</p>
+            <p className="text-xs font-bold text-slate-700 truncate">
+              {!active && !connecting && 'Tap mic to start'}
+              {connecting && 'Connecting…'}
+              {active && !muted && (talking ? 'Speaking…' : 'Listening…')}
+              {active && muted && 'Muted — Lumina is paused'}
+            </p>
+          </div>
+          <button
+            onClick={handleClose}
+            className="w-8 h-8 rounded-full hover:bg-white/80 flex items-center justify-center text-slate-500 transition flex-shrink-0"
+            aria-label="Close"
+          >
+            <i className="fas fa-times text-sm"></i>
+          </button>
         </div>
 
-        <div className="relative space-y-6">
-          <div className="flex items-start justify-between">
-            <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-[0.25em]">Ask Lumina</p>
-              <h3 className="text-2xl font-extrabold text-slate-900 mt-1 truncate">
-                {context ? `Help with ${context.topic}` : 'Voice companion'}
-              </h3>
-            </div>
-            <button
-              onClick={handleClose}
-              className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition"
-            >
-              <i className="fas fa-times"></i>
-            </button>
-          </div>
+        {/* Body */}
+        <div className="px-4 py-4 space-y-3">
+          {error && (
+            <p className="text-rose-500 text-xs font-semibold text-center">{error}</p>
+          )}
 
-          {/* Pulse orb */}
-          <div className="relative flex items-center justify-center h-48">
-            <div
-              className={`absolute w-40 h-40 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 opacity-40 ${
-                active ? 'aura-breathing' : ''
-              }`}
-            />
-            <div
-              className={`relative w-28 h-28 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-2xl shadow-indigo-300/50 transition-transform ${
-                talking ? 'scale-110' : 'scale-100'
-              }`}
-            >
-              <i className={`fas ${active ? 'fa-wave-square animate-pulse' : 'fa-microphone'} text-white text-3xl`}></i>
-            </div>
-          </div>
+          {!active && !connecting && !error && (
+            <p className="text-xs text-slate-500 leading-relaxed text-center">
+              {context
+                ? `She'll help with: ${context.topic}`
+                : `She'll ask "what didn't you understand?" — answer in your voice.`}
+            </p>
+          )}
 
-          {/* Status */}
-          <div className="text-center min-h-[3rem]">
-            {error && <p className="text-rose-500 text-sm font-semibold">{error}</p>}
-            {!error && !active && !connecting && (
-              <p className="text-slate-500 text-sm">Lumina can read the question, simplify it, or just keep you company.</p>
-            )}
-            {connecting && <p className="text-indigo-500 text-sm font-bold animate-pulse">Connecting…</p>}
-            {active && !transcription && (
-              <p className="text-slate-400 text-xs uppercase tracking-widest font-bold">
-                {talking ? 'Lumina is speaking…' : 'Listening…'}
-                {screenShared && <span className="ml-2 text-emerald-500">• screen shared</span>}
-              </p>
-            )}
-            {active && transcription && (
-              <p className="text-slate-700 text-sm italic leading-relaxed">"{transcription}"</p>
-            )}
-          </div>
+          {active && transcription && (
+            <div className="bg-indigo-50/60 rounded-xl p-3 max-h-24 overflow-y-auto">
+              <p className="text-[11px] text-slate-700 italic leading-snug">"{transcription}"</p>
+            </div>
+          )}
 
           {/* Controls */}
-          <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-center gap-2 pt-1">
             {!active ? (
               <button
                 onClick={startSession}
                 disabled={connecting}
-                className="w-full py-5 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold shadow-xl shadow-indigo-200/50 hover:scale-[1.02] active:scale-95 transition disabled:opacity-50 flex items-center justify-center gap-3"
+                className="flex-1 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-bold shadow-md hover:scale-[1.02] active:scale-95 transition disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                <i className="fas fa-microphone"></i>
-                {connecting ? 'Starting…' : 'Start voice session'}
+                <i className={`fas ${connecting ? 'fa-circle-notch animate-spin' : 'fa-microphone'}`}></i>
+                {connecting ? 'Starting…' : 'Start'}
               </button>
             ) : (
-              <button
-                onClick={stopSession}
-                className="w-full py-5 rounded-2xl bg-slate-900 text-white font-bold hover:bg-black transition flex items-center justify-center gap-3"
-              >
-                <i className="fas fa-stop"></i>
-                End session
-              </button>
+              <>
+                <button
+                  onClick={() => setMuted((m) => !m)}
+                  className={`w-11 h-11 rounded-xl flex items-center justify-center text-sm font-bold transition active:scale-95 ${
+                    muted ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                  aria-label={muted ? 'Unmute' : 'Mute'}
+                  title={muted ? 'Unmute' : 'Mute'}
+                >
+                  <i className={`fas ${muted ? 'fa-microphone-slash' : 'fa-microphone'}`}></i>
+                </button>
+                <button
+                  onClick={stopSession}
+                  className="flex-1 py-3 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-black transition active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <i className="fas fa-stop"></i>
+                  End
+                </button>
+              </>
             )}
-            <p className="text-[10px] text-slate-400 text-center font-bold uppercase tracking-[0.2em]">
-              Mic + optional screen share • Private
-            </p>
           </div>
+
+          <p className="text-[9px] text-slate-400 text-center font-bold uppercase tracking-[0.18em]">
+            Voice only • You can keep answering questions behind
+          </p>
         </div>
-      </motion.div>
+      </div>
     </motion.div>
   );
 };

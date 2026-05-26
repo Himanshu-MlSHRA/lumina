@@ -30,8 +30,36 @@ interface DailyTask {
 
 interface MoodEntry {
   date: string;
-  score: number;
+  score: number | null;
   label: string;
+}
+
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function buildSevenDaySeries(rawEntries: { createdAt: string; score: number; label: string }[]): MoodEntry[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const byDay = new Map<string, { score: number; label: string }>();
+  for (const e of rawEntries) {
+    const d = new Date(e.createdAt);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    byDay.set(key, { score: e.score, label: e.label });
+  }
+
+  const series: MoodEntry[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const hit = byDay.get(key);
+    series.push({
+      date: DAY_LABELS[d.getDay()],
+      score: hit ? hit.score : null,
+      label: hit ? hit.label : '',
+    });
+  }
+  return series;
 }
 
 const container = {
@@ -56,6 +84,7 @@ const Dashboard: React.FC = () => {
   const [streak, setStreak] = useState(0);
   const [tasksCompleted, setTasksCompleted] = useState(0);
   const [showMoodPicker, setShowMoodPicker] = useState(false);
+  const [todaysMood, setTodaysMood] = useState<{ score: number; label: string } | null>(null);
   const [loadingTasks, setLoadingTasks] = useState(true);
   const [personality, setPersonality] = useState<{
     type: string;
@@ -69,6 +98,12 @@ const Dashboard: React.FC = () => {
     loadMood();
     loadActivity();
     loadPersonality();
+
+    // Refresh mood whenever the dashboard regains focus — covers the case
+    // where Lumina logged a mood automatically during a voice session.
+    const onFocus = () => loadMood();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, []);
 
   const loadPersonality = async () => {
@@ -89,61 +124,80 @@ const Dashboard: React.FC = () => {
     setTasksCompleted(tasks.filter(t => t.completed).length);
   }, [tasks]);
 
+  const FALLBACK_TASKS: DailyTask[] = [
+    { id: 'f1', title: 'Nature Walk', description: 'Take a 15-minute walk outside and notice 5 things you can see.', completed: false, type: 'movement' },
+    { id: 'f2', title: 'Deep Breathing', description: 'Practice 3 sets of 4-4-6 box breathing.', completed: false, type: 'mindfulness' },
+    { id: 'f3', title: 'Digital Detox', description: 'Put your phone away for 30 minutes.', completed: false, type: 'mindfulness' },
+  ];
+
+  const generateAITasks = async () => {
+    const aiData = await api.post('/ai/tasks', {});
+    if (aiData.tasks?.length > 0) {
+      const batch = await api.post('/tasks/batch', { tasks: aiData.tasks });
+      return (batch.tasks || []) as DailyTask[];
+    }
+    return [];
+  };
+
   const loadTasks = async () => {
     setLoadingTasks(true);
     try {
       const data = await api.get('/tasks');
       if (data.tasks.length === 0) {
         try {
-          const aiData = await api.post('/ai/tasks', { mood: 'neutral' });
-          if (aiData.tasks?.length > 0) {
-            const batch = await api.post('/tasks/batch', { tasks: aiData.tasks });
-            setTasks(batch.tasks || []);
-            return;
-          }
-        } catch { /* fallback below */ }
-        // Fallback tasks
-        setTasks([
-          { id: 'f1', title: 'Nature Walk', description: 'Take a 15-minute walk outside and notice 5 things you can see.', completed: false, type: 'movement' },
-          { id: 'f2', title: 'Deep Breathing', description: 'Practice 3 sets of 4-4-6 box breathing.', completed: false, type: 'mindfulness' },
-          { id: 'f3', title: 'Digital Detox', description: 'Put your phone away for 30 minutes.', completed: false, type: 'mindfulness' },
-        ]);
+          const generated = await generateAITasks();
+          setTasks(generated.length > 0 ? generated : FALLBACK_TASKS);
+        } catch {
+          setTasks(FALLBACK_TASKS);
+        }
       } else {
         setTasks(data.tasks);
       }
     } catch {
-      setTasks([
-        { id: 'f1', title: 'Nature Walk', description: 'Take a 15-minute walk outside.', completed: false, type: 'movement' },
-        { id: 'f2', title: 'Deep Breathing', description: 'Practice 3 sets of box breathing.', completed: false, type: 'mindfulness' },
-        { id: 'f3', title: 'Digital Detox', description: 'Put your phone away for 30 minutes.', completed: false, type: 'mindfulness' },
-      ]);
+      setTasks(FALLBACK_TASKS);
     } finally {
       setLoadingTasks(false);
     }
   };
 
+  const [refreshingTasks, setRefreshingTasks] = useState(false);
+
+  const refreshTasksFromBehaviour = async () => {
+    if (refreshingTasks) return;
+    setRefreshingTasks(true);
+    try {
+      const incomplete = tasks.filter((t) => !t.completed && !t.id.startsWith('f'));
+      await Promise.all(
+        incomplete.map((t) => api.delete(`/tasks/${t.id}`).catch(() => null))
+      );
+      const generated = await generateAITasks();
+      const completedToday = tasks.filter((t) => t.completed);
+      if (generated.length > 0) {
+        setTasks([...completedToday, ...generated]);
+      }
+    } catch (e) {
+      console.error('Refresh tasks failed', e);
+    } finally {
+      setRefreshingTasks(false);
+    }
+  };
+
   const loadMood = async () => {
     try {
-      const data = await api.get('/mood?days=7');
-      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const entries = data.entries.map((e: any) => ({
-        date: days[new Date(e.createdAt).getDay()],
-        score: e.score,
-        label: e.label,
-      }));
-      setMoodHistory(entries.length > 0 ? entries : [
-        { date: 'Mon', score: 5, label: 'Okay' },
-        { date: 'Tue', score: 6, label: 'Stable' },
-        { date: 'Wed', score: 5, label: 'Stable' },
-        { date: 'Thu', score: 7, label: 'Good' },
-        { date: 'Fri', score: 7, label: 'Good' },
+      const [data, todayData] = await Promise.all([
+        api.get('/mood?days=7'),
+        api.get('/mood/today').catch(() => ({ entry: null, logged: false })),
       ]);
+      const series = buildSevenDaySeries(data.entries || []);
+      setMoodHistory(series);
+      if (todayData?.logged && todayData.entry) {
+        setTodaysMood({ score: todayData.entry.score, label: todayData.entry.label });
+        setShowMoodPicker(false);
+      } else {
+        setTodaysMood(null);
+      }
     } catch {
-      setMoodHistory([
-        { date: 'Mon', score: 5, label: 'Okay' },
-        { date: 'Tue', score: 6, label: 'Stable' },
-        { date: 'Wed', score: 7, label: 'Good' },
-      ]);
+      setMoodHistory(buildSevenDaySeries([]));
     }
   };
 
@@ -171,12 +225,19 @@ const Dashboard: React.FC = () => {
   };
 
   const toggleTask = async (id: string, completed: boolean) => {
+    const target = tasks.find((t) => t.id === id);
     // Optimistic update
     setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: !completed } : t));
     try {
       await api.put(`/tasks/${id}`, { completed: !completed });
       if (!completed) {
-        await api.post('/activity', { activityType: 'task_complete', metadata: { taskId: id } });
+        const taskType = target?.type || 'unknown';
+        // Tag the activity with task type so the report's "what you like to do"
+        // ranks per-category (movement / mindfulness / social / creative).
+        await api.post('/activity', {
+          activityType: `task_${taskType}`,
+          metadata: { taskId: id, taskType, title: target?.title },
+        });
         loadActivity();
       }
     } catch {
@@ -188,7 +249,8 @@ const Dashboard: React.FC = () => {
   const logMood = async (score: number, label: string) => {
     try {
       await api.post('/mood', { score, label });
-      await api.post('/activity', { activityType: 'mood_log', metadata: { score } });
+      await api.post('/activity', { activityType: 'mood_log', metadata: { score, label } });
+      setTodaysMood({ score, label });
       setShowMoodPicker(false);
       loadMood();
       loadActivity();
@@ -250,7 +312,28 @@ const Dashboard: React.FC = () => {
       {/* Mood Logger */}
       <motion.div variants={item}>
         <AnimatePresence mode="wait">
-          {!showMoodPicker ? (
+          {todaysMood ? (
+            <motion.div
+              key="mood-logged"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="w-full bg-gradient-to-r from-emerald-50/80 to-teal-50/80 backdrop-blur-sm border border-emerald-100/60 rounded-3xl p-5 flex items-center justify-between"
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-white shadow-lg shadow-emerald-200/50">
+                  <i className="fas fa-check text-xl"></i>
+                </div>
+                <div className="text-left">
+                  <p className="font-bold text-slate-800">Today's mood logged</p>
+                  <p className="text-sm text-slate-500">
+                    {todaysMood.label} · {todaysMood.score}/10 — see you tomorrow
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Done</span>
+            </motion.div>
+          ) : !showMoodPicker ? (
             <motion.button
               key="mood-cta"
               initial={{ opacity: 0, y: 10 }}
@@ -265,7 +348,7 @@ const Dashboard: React.FC = () => {
                 </div>
                 <div className="text-left">
                   <p className="font-bold text-slate-800">Log your mood</p>
-                  <p className="text-sm text-slate-500">Track how you're feeling right now</p>
+                  <p className="text-sm text-slate-500">Once a day — track how you're feeling right now</p>
                 </div>
               </div>
               <i className="fas fa-chevron-right text-indigo-300 group-hover:translate-x-1 transition-transform"></i>
@@ -426,21 +509,32 @@ const Dashboard: React.FC = () => {
       {/* Tasks + Chart */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <motion.section variants={item} className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-3">
             <h2 className="font-bold text-slate-800 uppercase tracking-widest text-[11px]">Daily Focus</h2>
-            {totalTasks > 0 && (
-              <div className="flex items-center gap-2">
-                <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                  <motion.div
-                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${completionPct}%` }}
-                    transition={{ duration: 0.5, ease: 'easeOut' }}
-                  />
+            <div className="flex items-center gap-3">
+              {totalTasks > 0 && (
+                <div className="flex items-center gap-2">
+                  <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <motion.div
+                      className="h-full bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${completionPct}%` }}
+                      transition={{ duration: 0.5, ease: 'easeOut' }}
+                    />
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-400">{completionPct}%</span>
                 </div>
-                <span className="text-[10px] font-bold text-slate-400">{completionPct}%</span>
-              </div>
-            )}
+              )}
+              <button
+                onClick={refreshTasksFromBehaviour}
+                disabled={refreshingTasks || loadingTasks}
+                title="Re-generate today's tasks from your latest mood and activity"
+                className="flex items-center gap-1.5 text-[10px] font-bold text-indigo-500 hover:text-indigo-700 uppercase tracking-widest disabled:opacity-50"
+              >
+                <i className={`fas fa-arrows-rotate ${refreshingTasks ? 'animate-spin' : ''}`}></i>
+                {refreshingTasks ? 'Tuning…' : 'Refresh'}
+              </button>
+            </div>
           </div>
           <div className="space-y-3">
             {loadingTasks ? (
@@ -521,6 +615,7 @@ const Dashboard: React.FC = () => {
                   fill="url(#moodGradient)"
                   dot={{ r: 5, fill: '#6366f1', strokeWidth: 3, stroke: '#fff' }}
                   activeDot={{ r: 7 }}
+                  connectNulls={true}
                 />
               </AreaChart>
             </ResponsiveContainer>

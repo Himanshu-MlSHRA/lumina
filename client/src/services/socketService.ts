@@ -11,7 +11,7 @@ export function connectSocket(token: string): Socket {
     socket.disconnect();
   }
 
-  socket = io('http://localhost:3001', {
+  socket = io('https://lumina-backend-we2d.onrender.com', {
     auth: { token },
     reconnection: true,
     reconnectionAttempts: 10,

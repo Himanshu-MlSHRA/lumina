@@ -99,6 +99,24 @@ router.post('/batch', authenticate, async (req: AuthRequest, res: Response) => {
   }
 });
 
+// Delete a task (used when refreshing AI tasks based on new behaviour signal)
+router.delete('/:id', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const taskId = req.params.id as string;
+    const result = await prisma.dailyTask.deleteMany({
+      where: { id: taskId, userId: req.userId! },
+    });
+    if (result.count === 0) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+    res.json({ deleted: true });
+  } catch (error) {
+    console.error('Delete task error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Toggle task completion
 router.put('/:id', authenticate, async (req: AuthRequest, res: Response) => {
   try {

@@ -30,6 +30,21 @@ model User {
   createdGroups       Group[]         @relation("creator")
   personalityAnswers  PersonalityAnswer[]
   personalitySessions PersonalitySession[]
+  facts               UserFact[]
+}
+
+model UserFact {
+  id        String   @id @default(uuid())
+  userId    String
+  category  String
+  content   String
+  source    String   @default("chat")
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, category])
+  @@index([userId, createdAt])
 }
 
 model PersonalityAnswer {

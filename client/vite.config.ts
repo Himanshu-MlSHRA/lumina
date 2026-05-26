@@ -10,11 +10,11 @@ export default defineConfig(({ mode }) => {
         host: '0.0.0.0',
         proxy: {
           '/api': {
-            target: 'http://localhost:3001',
+            target: 'https://lumina-backend-we2d.onrender.com',
             changeOrigin: true,
           },
           '/uploads': {
-            target: 'http://localhost:3001',
+            target: 'https://lumina-backend-we2d.onrender.com',
             changeOrigin: true,
           },
         },

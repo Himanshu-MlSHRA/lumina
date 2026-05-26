@@ -3,6 +3,7 @@ import { Link, useLocation, Outlet, useNavigate } from "react-router-dom";
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../../stores/authStore';
 import { useNotificationStore } from '../../stores/notificationStore';
+import { useLuminaStore } from '../../stores/luminaStore';
 import { connectSocket, disconnectSocket } from '../../services/socketService';
 import { api } from '../../services/api';
 import NotificationBell from '../notifications/NotificationBell';
@@ -86,7 +87,23 @@ const Layout = () => {
     { path: '/community', icon: 'fa-heart', label: 'Community' },
   ];
 
-  const handleLogout = () => {
+  const luminaActive = useLuminaStore(s => s.isActive);
+  const requestNav = useLuminaStore(s => s.requestNavigation);
+
+  const guardedNavigate = async (e: React.MouseEvent, path: string) => {
+    if (!luminaActive || location.pathname === path) return;
+    e.preventDefault();
+    const decision = await requestNav(path);
+    if (decision === 'end') {
+      navigate(path);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (luminaActive) {
+      const decision = await requestNav('/login');
+      if (decision !== 'end') return;
+    }
     disconnectSocket();
     logout();
     navigate('/login');
@@ -114,6 +131,7 @@ const Layout = () => {
               <Link
                 key={item.path}
                 to={item.path}
+                onClick={(e) => guardedNavigate(e, item.path)}
                 className={`relative flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all duration-200 ${
                   isActive
                     ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-200/50 font-semibold'
@@ -160,6 +178,7 @@ const Layout = () => {
             <Link
               key={item.path}
               to={item.path}
+              onClick={(e) => guardedNavigate(e, item.path)}
               className={`flex flex-col items-center gap-1 py-1 px-3 rounded-xl transition-all ${
                 isActive ? 'text-indigo-600' : 'text-slate-400'
               }`}
